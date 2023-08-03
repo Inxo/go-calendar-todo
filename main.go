@@ -1,26 +1,61 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
-	"github.com/nsf/termbox-go"
+	"github.com/gdamore/tcell"
+	"github.com/gdamore/tcell/encoding"
+	_ "github.com/mattn/go-sqlite3"
 	"strconv"
 	"time"
 )
 
 func main() {
-	err := termbox.Init()
+	// Инициализация экрана
+	screen, err := tcell.NewScreen()
 	if err != nil {
 		panic(err)
 	}
-	defer termbox.Close()
+	defer screen.Fini()
+
+	// Инициализация кодировки терминала
+	encoding.Register()
+
+	err = screen.Init()
+	if err != nil {
+		panic(err)
+	}
+
+	db, err := sql.Open("sqlite3", "events.db")
+	if err != nil {
+		panic(err)
+	}
+	defer func(db *sql.DB) {
+		err := db.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(db)
+
+	// Создание таблицы events, если она не существует
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			event_date DATE,
+			description TEXT
+		)
+	`)
+	if err != nil {
+		panic(err)
+	}
 
 	// Получаем текущую дату
 	currentDate := time.Now()
 
 	// Запускаем главный цикл
 	for {
-		printCalendar(currentDate)
-		choice := getUserInput()
+		drawUI(screen, currentDate, db)
+		choice := getUserInput(screen)
 
 		// Обработка выбора пользователя
 		switch choice {
@@ -35,30 +70,49 @@ func main() {
 		case "n":
 			currentDate = time.Now()
 		case "q":
-			fmt.Println("Выход из программы.")
+			fmt.Println("Quit.")
 			return
 		default:
-			return
+			//return
 			//fmt.Println("Некорректный выбор. Попробуйте еще раз.")
 		}
 	}
 }
 
+// Функция для отрисовки пользовательского интерфейса
+func drawUI(screen tcell.Screen, date time.Time, db *sql.DB) {
+	screen.Clear()
+
+	width, _ := screen.Size()
+
+	// Отрисовка календаря в левой панели
+	drawCalendar(screen, 0, 0, date)
+
+	// Отрисовка списка событий в правой панели
+	drawEventList(screen, width/2, 0, width/2, date, db)
+
+	screen.Show()
+}
+
+// Функция для отрисовки календаря
+func drawCalendar(screen tcell.Screen, x, y int, date time.Time) {
+	printCalendar(screen, x, y, date)
+}
+
 // Функция для печати календаря текущего месяца
-func printCalendar(date time.Time) {
-	err := termbox.Clear(termbox.ColorDefault, termbox.ColorDefault)
-	if err != nil {
-		panic(err)
-	}
+func printCalendar(screen tcell.Screen, x, y int, date time.Time) {
+	screen.Clear()
 
 	weekdays := [7]string{"Mo", "Tu", "We", "Th", "Fr", "St", "Su"}
 
-	color := termbox.ColorDefault
+	color := tcell.ColorDefault
+	bgColor := tcell.ColorDefault
 	for col, weekday := range weekdays {
-		x, y := col*3, 1
-		color = termbox.ColorGreen
+		x, y := x+col*3, y+1
+		color = tcell.ColorGreen
 		for i, c := range weekday {
-			termbox.SetCell(x+i, y, c, color, termbox.ColorDefault)
+			style := tcell.StyleDefault.Background(bgColor).Foreground(color)
+			screen.SetContent(x+i, y, c, nil, style)
 		}
 	}
 	monthCalendar := getMonthCalendar(date)
@@ -66,12 +120,17 @@ func printCalendar(date time.Time) {
 	//monthRow := 0
 	for row, week := range monthCalendar {
 		//monthRow = row
+
 		for col, day := range week {
+			color = tcell.ColorDefault
+			bgColor = tcell.ColorDefault
+
 			x, y := col*3, row+2
-			color = termbox.ColorDefault
 			if day == date.Day() {
-				color = termbox.ColorRed // Цвет текущего дня (красный)
+				color = tcell.ColorWhite
+				bgColor = tcell.ColorBlue
 			}
+			style := tcell.StyleDefault.Background(bgColor).Foreground(color)
 
 			str := strconv.Itoa(day)
 			if day < 10 {
@@ -81,24 +140,21 @@ func printCalendar(date time.Time) {
 				str = "  "
 			}
 			for i, c := range str {
-				termbox.SetCell(x+i, y, c, color, termbox.ColorDefault)
+				screen.SetContent(x+i, y, c, nil, style)
 			}
 		}
 	}
 
 	monthName := date.Format("January")
 	year := date.Year()
-	w, _ := termbox.Size()
+	w, _ := screen.Size()
 	msg := monthName + " " + fmt.Sprintf("%d", year)
 	xPos, yPos := 0, 0
-	printCoor(xPos, yPos, termbox.ColorRed, termbox.ColorDefault, msg)
-	msg = "Tasks"
-	printCoor(w/2-len(msg)+7*3, yPos, termbox.ColorRed, termbox.ColorDefault, msg)
+	printCoor(screen, xPos, yPos, tcell.ColorRed, tcell.ColorDefault, msg)
+	msg = "Events"
+	printCoor(screen, w/2-len(msg)+7*3, yPos, tcell.ColorRed, tcell.ColorDefault, msg)
 
-	err = termbox.Flush()
-	if err != nil {
-		panic(err)
-	}
+	screen.Show()
 }
 
 // Функция для получения календаря месяца
@@ -132,37 +188,87 @@ func getMonthCalendar(date time.Time) [][]int {
 }
 
 // Функция для получения выбора пользователя
-func getUserInput() string {
-	event := termbox.PollEvent()
-	if event.Type == termbox.EventKey {
-		switch event.Key {
-		case termbox.KeyArrowLeft:
+func getUserInput(screen tcell.Screen) string {
+	event := screen.PollEvent()
+	switch event := event.(type) {
+	case *tcell.EventKey:
+		switch event.Key() {
+		case tcell.KeyLeft:
 			return "l"
-		case termbox.KeyArrowRight:
+		case tcell.KeyRight:
 			return "r"
-		case termbox.KeyArrowUp:
+		case tcell.KeyUp:
 			return "u"
-		case termbox.KeyArrowDown:
+		case tcell.KeyDown:
 			return "d"
-		case termbox.KeySpace:
-			return "n"
-		case termbox.KeyEsc, termbox.KeyCtrlC:
+		case tcell.KeyRune:
+			switch event.Rune() {
+			case ' ':
+				return "n"
+			}
+		case tcell.KeyEsc, tcell.KeyCtrlC:
 			return "q"
 		}
 	}
 	return ""
 }
 
-// Функция для печати текста в центре консоли
-func printCentered(fg, bg termbox.Attribute, msg string) {
-	w, h := termbox.Size()
-	xPos, yPos := w/2-len(msg)/2, h/2
+// Функция для отрисовки списка событий
+func drawEventList(screen tcell.Screen, x, y, width int, date time.Time, db *sql.DB) {
+	// Запрос событий на выбранную дату из базы данных
+	rows, err := db.Query("SELECT description FROM events WHERE event_date = ?", date.Format("2006-01-02"))
+	if err != nil {
+		panic(err)
+	}
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(rows)
 
-	printCoor(xPos, yPos, fg, bg, msg)
+	// Перемещаем курсор на начало правой панели
+	x = width / 2
+	y = 0
+
+	// Выводим заголовок списка событий
+	y++
+	drawText(screen, x+3, y, tcell.StyleDefault.Foreground(tcell.ColorYellow), "События на "+date.Format("02.01.2006"))
+	y++
+
+	// Выводим список событий
+	for rows.Next() {
+		var description string
+		err = rows.Scan(&description)
+		if err != nil {
+			panic(err)
+		}
+
+		drawText(screen, x+3, y, tcell.StyleDefault, description)
+		//drawLine(screen, x+4, tcell.StyleDefault)
+		y++
+	}
 }
 
-func printCoor(x int, y int, fg, bg termbox.Attribute, msg string) {
+// Функция для вывода текста на экран
+func drawText(screen tcell.Screen, x, y int, style tcell.Style, text string) {
+	for _, ch := range text {
+		screen.SetContent(x, y, ch, nil, style)
+		x++
+	}
+}
+
+// Функция для печати текста в центре консоли
+//func printCentered(screen tcell.Screen, fg, bg tcell.Color, msg string) {
+//	w, h := screen.Size()
+//	xPos, yPos := w/2-len(msg)/2, h/2
+//
+//	printCoor(screen, xPos, yPos, fg, bg, msg)
+//}
+
+func printCoor(screen tcell.Screen, x int, y int, fg, bg tcell.Color, msg string) {
+	style := tcell.StyleDefault.Background(bg).Foreground(fg)
 	for i, c := range msg {
-		termbox.SetCell(x+i, y, c, fg, bg)
+		screen.SetContent(x+i, y, c, nil, style)
 	}
 }
