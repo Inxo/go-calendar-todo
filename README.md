@@ -6,6 +6,8 @@ Made with Chat GPT 3.5
 
 The Console Calendar and Events App is a simple command-line application written in Go (Golang) that allows users to view a calendar for the current month and navigate to previous or next months using arrow keys. The application also displays a list of events associated with specific dates, loaded from an SQLite database.
 
+![console app](/res/screen.png "Screenshot")
+
 ## Features:
 
 - Calendar Display: The application shows a calendar for the current month, with the ability to move back and forth between months using the left and right arrow keys.
