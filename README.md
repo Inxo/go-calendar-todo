@@ -19,3 +19,8 @@ The Console Calendar and Events App is a simple command-line application written
 - Navigation: Use the left and right arrow keys to navigate to the previous or next month on the calendar.
 - Event List: The application fetches and displays events for the selected date in the right panel.
 - Add/Manage Events: The user can manage events through the SQLite database. Events can be added, edited, or deleted for specific dates.
+
+## Note:
+
+This application is designed for the terminal/console environment. It allows users to view and manage events efficiently
+from the command line, making it suitable for simple personal or task management purposes.
