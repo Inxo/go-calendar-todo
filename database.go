@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -58,4 +59,14 @@ func (db *DB) getEvents(date time.Time) ([]string, error) {
 	}
 
 	return events, nil
+}
+
+func addEventToDB(db *DB, date time.Time, description string) {
+	// Insert event into the database
+	_, err := db.db.Exec("INSERT INTO events (event_date, description) VALUES (?, ?)", date.Format("2006-01-02"), description)
+	if err != nil {
+		fmt.Println("Error adding event:", err)
+	} else {
+		fmt.Println("Event added successfully!")
+	}
 }
